@@ -8,6 +8,7 @@
 #include "XQtorH7.h"
 #include "DeltaAlgorithm.h"
 #include "DataParser.h"
+#include "Hardware.h"
 
 using namespace std;
 using namespace ROBOTIS;
@@ -19,18 +20,21 @@ DataPreUpper and DataPreDown
 ****************************/
 #define DataPreUpper    (50)
 #define DataPreDown     (1)
+#define LASER           (16)  //激光头端口号
+#define LASER_OPEN      ('0') //打开激光头
+#define LASER_CLOSE     ('1') //关闭激光头
 
 char SERVODEVICE[] = "/dev/ttyUSB0"; //舵机串口号
 int SERVOBAUD = 115200;
-double Height[3] = {-330.0, -340.0, -350.0};
+double Height[3] = {-290.0, -300.0, -310.0};
 int PosDataPre = 1;
 /* 位置数据精细度，越小越精细
  * 范围[1-50]:[DataPreDown, DataPreUpper]
 */
-char PicPath[] = "picture.txt"; //存储图片原始数据
+char PicPath[] = "a1mm.txt"; //存储图片原始数据
 char Tra_k[] = "trak.txt"; //存储舵机轨迹刻度的文件
 char hardSizeFile[] = "hardSizeFile.txt";
-int UpdatePosFre = 500; //位置更新频率500Hz
+int UpdatePosFre = 125.0; //位置更新频率500Hz
 DeltaAlgorithm *pDeltaAlgo = NULL;
 XQtorH7 *pXQH7 = NULL;
 DataParser *pDParser = NULL;
@@ -57,6 +61,11 @@ int main()
 
     //延迟1s
     delay_ms(1000.0);
+    printf("%s: %d: start to draw...\n", __FILE__, __LINE__);
+    getchar();
+
+    //计算绘制时间
+    delay_start();
 
     //执行轨迹刻度文件
     if(!excute_traK_file()) {
@@ -65,6 +74,13 @@ int main()
     }
     else
         printf("%s: %d: hello\n", __FILE__, __LINE__);
+
+    //计算结束时间
+    double delayTm = delay_end();
+    printf("%s: %d: the delayTm(%lf)\n", __FILE__, __LINE__, delayTm);
+
+    //关闭激光头
+    Hardware_close_port();
 
     return 1;
 }
@@ -179,8 +195,19 @@ bool initial_sys()
     else
         printf("%s: %d: set id(1,2,3) speedK success\n", __FILE__, __LINE__);
 
+    //打开激光设备端口
+    if(Hardware_open_port()) {
+        //关闭激光头
+        Hardware_write_gpio(LASER, LASER_CLOSE);
+    }
+    else {
+        printf("%s: %d: open gpio port failed\n", __FILE__, __LINE__);
+        return 0;
+    }
+
     //设置初始位置
     float _xyz[3] = {0.0, 0.0, -330.0};
+    _xyz[2] = Height[2];
     if(!set_posture(_xyz)) {
         printf("%s: %d: set posture failed\n", __FILE__, __LINE__);
         return false;
@@ -221,6 +248,7 @@ bool excute_traK_file()
     int posK[3], id[3] = {1, 2, 3}, exten[3] = {5, 5, 5};
     int result1, result2;
     int _stepIndex=PosDataPre;
+    bool laserOpen = false, laserClose = true;
 
     fp = fopen(Tra_k, "r");
     if(!fp) {
@@ -233,6 +261,12 @@ bool excute_traK_file()
             return false;
         }
         if('m' == flag) {
+            if(laserOpen) {
+                laserOpen = false;
+                laserClose = true;
+                Hardware_write_gpio(LASER, LASER_CLOSE);
+            }
+
             //如果遇到'm'标志坐标，设置目标位置，并等待运动停止
             result1 = pXQH7->sync_set_many_servo(2, id, 30, posK);
             printf("%s: %d: set goalK(%d, %d, %d)\n", __FILE__, __LINE__, posK[0], posK[1], posK[2]);
@@ -242,12 +276,18 @@ bool excute_traK_file()
                 return false;
             }
             _stepIndex = 1;
-            delay_ms(50.0); //延迟50ms
+            delay_ms(1000.0); //延迟50ms
         }
         else{
+            if(laserClose) {
+                laserClose = false;
+                laserOpen = true;
+                Hardware_write_gpio(LASER, LASER_OPEN);
+            }
+
             //如果遇到'l'标志的数据，通过_stepIndex
             //控制运动的精度和速度
-            if(_stepIndex >= PosDataPre) {
+            //if(_stepIndex >= PosDataPre) {
                 result1 = pXQH7->sync_set_many_servo(2, id, 30, posK);
                 //result2 = pXQH7->wait_for_many_servo_exten(exten);
                 if(result1 /*|| result2*/) {
@@ -255,17 +295,17 @@ bool excute_traK_file()
                     return false;
                 }
                 //printf("%s: %d: posK(%d, %d, %d)\n", __FILE__, __LINE__, posK[0], posK[1], posK[2]);
-                _stepIndex = 1;
-            }
-            else
-                _stepIndex += 1;
+                //_stepIndex = 1;
+            //}
+            //else
+            //    _stepIndex += 1;
             delay_ms((double)(1000.0 / UpdatePosFre));
         }
         /* 延迟1ms
          * 如果发送的指令无应答包，指令之间应相差100us
          * 此条指令无应答包，指令之间相差1000us
         */
-        delay_ms(1.0);
+        //delay_ms(1.0);
     }
 
     fclose(fp);

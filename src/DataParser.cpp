@@ -142,7 +142,7 @@ bool DataParser::trans_ink_to_coor(char *picPath)
 bool DataParser::trans_rough_to_pre()
 {
     double ps[3], pd[3], px[3];
-    double dis, unit = 0.1, startStep = 0.0; //线性函数控制变量
+    double dis, unit = 0.01, startStep = 0.0; //线性函数控制变量
     char flag[2];
     FILE *fp1 = NULL, *fp2 = NULL;
 
@@ -181,7 +181,7 @@ bool DataParser::trans_rough_to_pre()
         else if('l' == flag[1]){
             //搜索到以'l'为标志的数据
             dis = disPoint(3, ps, pd);
-            if(dis > unit) { //如果dis大于0.5
+            if(dis > unit) {
                 //float unitNum = dis/unit;
                 //float unitStep = 1.0/unitNum;
                 float unitStep = unit / dis;
@@ -208,7 +208,7 @@ bool DataParser::trans_rough_to_pre()
             }
             else{
                 //如果dis小于0.5
-                fprintf(fp2, "%c (%lf %lf %lf) %lf\n", flag[1], pd[0], pd[1], pd[2], dis);
+                fprintf(fp2, "%c (%lf %lf %lf)\n", flag[1], pd[0], pd[1], pd[2]);
                 //更新数据
                 flag[0] = 'm';
             }

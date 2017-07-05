@@ -4,13 +4,14 @@
 IsArm1			= 	no
 
 TARGET			=	libdxl.a
-OBJS			=	Dmath.o PacketHandler.o PortHandler.o DataParser.o DeltaAlgorithm.o XQtorH7.o
+OBJS			=	Dmath.o PacketHandler.o PortHandler.o DataParser.o DeltaAlgorithm.o XQtorH7.o Hardware.o
 SOURCES			=	../../src/Dmath.cpp			 \
 					../../src/PacketHandler.cpp	 \
 					../../src/PortHandler.cpp	 \
 					../../src/DataParser.cpp	 \
 					../../src/DeltaAlgorithm.cpp \
 					../../src/XQtorH7.cpp		 \
+					../../src/Hardware.cpp		 \
 
 INCLUDEDIRS		+=	-I ../../include
 LIBRARIES		+=	-lrt

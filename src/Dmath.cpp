@@ -56,13 +56,13 @@ double cal_triangle_angle(float a, float b, float c)
 //微秒延迟函数
 void delay_ms(double msec)
 {
-    int i = 200;
+    int i = 2000;
     double diff;
     struct timespec tsStart, tsEnd;
 
     clock_gettime(CLOCK_MONOTONIC, &tsStart);
     do{
-        while(i--); i = 200;
+        while(i--); i = 2000;
         clock_gettime(CLOCK_MONOTONIC, &tsEnd);
         diff = (double)((tsEnd.tv_sec - tsStart.tv_sec) * 1000 + (double)(tsEnd.tv_nsec - tsStart.tv_nsec) * 0.001 * 0.001);
     }while(diff <= msec);
@@ -78,7 +78,7 @@ void delay_start()
 //函数延迟结束:以毫秒为单位
 double delay_end()
 {
-    int i = 200;
+    int i = 2000;
     double diff = 0;
     struct timespec TSEnd;
     while(i--);

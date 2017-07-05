@@ -212,10 +212,12 @@ int PacketHandler::tx_packet(void)
     gInstructPacket[_total_packet_length - 1] = ~_checksum;
 
     //现实发送的指令
+
     printf("%s: %d: send inst: ", __FILE__, __LINE__);
     for(int __i = 0; __i < _total_packet_length; __i++)
         printf("%x ", gInstructPacket[__i]);
     printf("\n");
+
 
     //tx packet
     _written_packet_length = pPort->WritePort((UINT8_T*)gInstructPacket, _total_packet_length);
@@ -262,7 +264,7 @@ int PacketHandler::rx_packet(void)
         return COMM_RXSUCCESS;
     }
 
-    printf("%s: %d: recv Statue: \n", __FILE__, __LINE__);
+    //printf("%s: %d: recv Statue: \n", __FILE__, __LINE__);
     while (true) {
         //从管道读取数据
         retNum = pPort->ReadPort((UINT8_T*)&gStatusPacket[_rx_length], _wait_length - _rx_length);
