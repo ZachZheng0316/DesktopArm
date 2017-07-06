@@ -31,10 +31,10 @@ int PosDataPre = 1;
 /* 位置数据精细度，越小越精细
  * 范围[1-50]:[DataPreDown, DataPreUpper]
 */
-char PicPath[] = "a50mm.txt"; //存储图片原始数据
+char PicPath[] = "a1mm.txt"; //存储图片原始数据
 char Tra_k[] = "trak.txt"; //存储舵机轨迹刻度的文件
 char hardSizeFile[] = "hardSizeFile.txt";
-int UpdatePosFre = 125.0; //位置更新频率125Hz
+int UpdatePosFre = 125.0; //位置更新频率500Hz
 DeltaAlgorithm *pDeltaAlgo = NULL;
 XQtorH7 *pXQH7 = NULL;
 DataParser *pDParser = NULL;
@@ -131,7 +131,6 @@ bool initial_sys()
     }
     else
         printf("%s: %d: set id(1,2,3) Unenable \n", __FILE__, __LINE__);
-    /*
     result1 = pXQH7->set_one_servo_bytes(1, 1, 29, 0x00);
     result2 = pXQH7->set_one_servo_bytes(1, 2, 29, 0x00);
     result3 = pXQH7->set_one_servo_bytes(1, 3, 29, 0x00);
@@ -141,7 +140,6 @@ bool initial_sys()
     }
     else
         printf("%s: %d: set id(1,2,3) protect statue\n", __FILE__, __LINE__);
-    */
     result1 = pXQH7->set_one_servo_bytes(1, 1, 24, 0x01);
     result2 = pXQH7->set_one_servo_bytes(1, 2, 24, 0x01);
     result3 = pXQH7->set_one_servo_bytes(1, 3, 24, 0x01);
@@ -160,27 +158,27 @@ bool initial_sys()
     }
     else
         printf("%s: %d: set id(1,2,3) PID_P success\n", __FILE__, __LINE__);
-    result1 = pXQH7->set_one_servo_bytes(1, 1, 27, 32);
-    result2 = pXQH7->set_one_servo_bytes(1, 2, 27, 32);
-    result3 = pXQH7->set_one_servo_bytes(1, 3, 27, 32);
+    result1 = pXQH7->set_one_servo_bytes(1, 1, 27, 12);
+    result2 = pXQH7->set_one_servo_bytes(1, 2, 27, 12);
+    result3 = pXQH7->set_one_servo_bytes(1, 3, 27, 12);
     if(result1 || result2 || result3) {
         printf("%s: %d: set id(1,2,3) I_PID failed\n", __FILE__, __LINE__);
         return false;
     }
     else
         printf("%s: %d: set id(1,2,3) PID_I success\n", __FILE__, __LINE__);
-    result1 = pXQH7->set_one_servo_bytes(1, 1, 26, 30);
-    result2 = pXQH7->set_one_servo_bytes(1, 2, 26, 30);
-    result3 = pXQH7->set_one_servo_bytes(1, 3, 26, 30);
+    result1 = pXQH7->set_one_servo_bytes(1, 1, 26, 10);
+    result2 = pXQH7->set_one_servo_bytes(1, 2, 26, 10);
+    result3 = pXQH7->set_one_servo_bytes(1, 3, 26, 10);
     if(result1 || result2 || result3) {
         printf("%s: %d: set id(1,2,3) P_PID failed\n", __FILE__, __LINE__);
         return false;
     }
     else
         printf("%s: %d: set id(1,2,3) PID_D success\n", __FILE__, __LINE__);
-    result1 = pXQH7->set_one_servo_bytes(1, 1, 73, 10);
-    result2 = pXQH7->set_one_servo_bytes(1, 2, 73, 10);
-    result3 = pXQH7->set_one_servo_bytes(1, 3, 73, 10);
+    result1 = pXQH7->set_one_servo_bytes(1, 1, 73, 70);
+    result2 = pXQH7->set_one_servo_bytes(1, 2, 73, 70);
+    result3 = pXQH7->set_one_servo_bytes(1, 3, 73, 70);
     if(result1 || result2 || result3) {
         printf("%s: %d: set id(1,2,3) Acc statue failed\n", __FILE__, __LINE__);
         return false;
