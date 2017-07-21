@@ -7,7 +7,7 @@ TARGET			=	INDFNOX170605
 OBJS			=	INDFNOX170605.o
 
 INCLUDEDIRS		+=	-I ../../include
-LIBDIRS			+=	-L ../../build/GrayCarving
+LIBDIRS			+=	-L ../../build
 LIBRARIES		=	-ldxl -lm -lrt -lpthread
 CCFLAGS			=	$(INCLUDEDIRS) -W -Wall -O2
 CXFLAGS			=	$(INCLUDEDIRS) -w -Wall -O2

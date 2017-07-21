@@ -24,6 +24,7 @@ double disPoint(int num, double p1[], double p2[]);//求两点之间的距离
 double cal_triangle_angle(float a, float b, float c); //计算三角形a对边的角度
 
 void delay_ms(double msec); //毫秒延迟函数
+void delay_us(double usec); //微妙延迟函数
 void delay_start();         //函数延迟开始
 double delay_end();         //函数延迟结束
 

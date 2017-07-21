@@ -32,7 +32,7 @@ char LKEYPOSPATH[] = "LKeyPos.txt"; //左边琴键的姿态
 char RKEYPOSPATH[] = "RKeyPos.txt"; //右边琴键的姿态
 char SONGNUM = 0x00;   //存储曲目信息
 bool SONGSTOP = false; //存储曲目终止信息
-bool ISSTART = false; //
+bool ISSTART = true;   //
 ProtocolV3 *pProtoV3 = NULL; //协议V3
 LampsControl *pLed = NULL;   //LED控制类
 AX12A *pAX12 = NULL;         //AX12舵机控制类
@@ -54,6 +54,7 @@ int set_enable_relax(int _flag);
 int wait_arm_stop_exten(char _flag, int _exten);
 int hit_and_hit(int num, bool _isHit);
 int from_A_to_B_order(int num1, int num2);
+int from_A_to_B_order1(int num1, int num2, int lastChoose);
 int set_arm_bytes(int _byteNum, char dir, int addr, int *value);
 
 //多线程
@@ -179,8 +180,8 @@ bool initial_sys()
         pProtoV3->sendMessage(0x40, 0x04, 1, sdValue);
         return false;
     }
-    result1 = pAX12->set_one_servo_bytes(1, 5, CW_Slope, 32);
-    result2 = pAX12->set_one_servo_bytes(1, 5, CCW_Slope, 32);
+    result1 = pAX12->set_one_servo_bytes(1, 5, CW_Slope, 64);
+    result2 = pAX12->set_one_servo_bytes(1, 5, CCW_Slope, 64);
     if(result1 || result2) {
         result = result1 > 0 ?result1 : result2;
         printf("%s: %d: abnormal(%d) set one servo byte failed\n", __FILE__, __LINE__, result);
@@ -188,8 +189,8 @@ bool initial_sys()
         pProtoV3->sendMessage(0x40, 0x04, 1, sdValue);
         return false;
     }
-    result1 = pAX12->set_one_servo_bytes(1, 10, CW_Slope, 32);
-    result2 = pAX12->set_one_servo_bytes(1, 10, CCW_Slope, 32);
+    result1 = pAX12->set_one_servo_bytes(1, 10, CW_Slope, 64);
+    result2 = pAX12->set_one_servo_bytes(1, 10, CCW_Slope, 64);
     if(result1 || result2) {
         result = result1 > 0 ?result1 : result2;
         printf("%s: %d: abnormal(%d) set one servo byte failed\n", __FILE__, __LINE__, result);
@@ -198,18 +199,6 @@ bool initial_sys()
         return false;
     }
 
-    //激活
-    /*
-    for(i = 0; i < SERVO_NUM; i++) {
-        result = pAX12->set_one_servo_bytes(1, i+1, Torque_Enable, 1);
-        if(result){
-            sdValue[1] = result;
-            pProtoV3->sendMessage(0x40, 0x04, 1, sdValue);
-            return false;
-        }
-    }
-    delay_ms(50.0);
-    */
     //读取琴键位置文件
     if(!read_key_pos()) {
         printf("%s: %d: read key pos failed\n", __FILE__, __LINE__);
@@ -219,19 +208,6 @@ bool initial_sys()
     }
     else
         printf("%s: %d: read key pos succes\n", __FILE__, __LINE__);
-
-    //设置LED为菜单模式
-    /*
-    result = set_led_mode(1);
-    if(result > 0) {
-        printf("%s: %d: set led mode failed\n", __FILE__, __LINE__);
-        sdValue[1] = result;
-        pProtoV3->sendMessage(0x40, 0x04, 1, sdValue);
-        return false;
-    }
-    else
-        printf("%s: %d: set led mode succes\n", __FILE__, __LINE__);
-    */
 
     return true;
 }
@@ -264,8 +240,8 @@ int set_default_pos()
     }
 
     //设置目标位置
-    result1 = pAX12->set_one_servo_bytes(2, 5, Goal_Position, RKeyPos[5][4]);
-    result2 = pAX12->set_one_servo_bytes(2, 10, Goal_Position, RKeyPos[5][4]);
+    result1 = pAX12->set_one_servo_bytes(2, 5, Goal_Position, RKeyPos[0][4]);
+    result2 = pAX12->set_one_servo_bytes(2, 10, Goal_Position, LKeyPos[0][4]);
     if(result1 || result2) {
        result = result1 > 0 ? result1 : result2;
        printf("%s: %d: set one servo word failed\n", __FILE__, __LINE__);
@@ -273,8 +249,8 @@ int set_default_pos()
    }
    delay_ms(1000.0);
    for(int i = 0; i < 4; i++) {
-       result1 = pAX12->set_one_servo_bytes(2, i+1, Goal_Position, RKeyPos[5][i]);
-       result2 = pAX12->set_one_servo_bytes(2, i+6, Goal_Position, RKeyPos[5][i]);
+       result1 = pAX12->set_one_servo_bytes(2, i+1, Goal_Position, RKeyPos[0][i]);
+       result2 = pAX12->set_one_servo_bytes(2, i+6, Goal_Position, LKeyPos[0][i]);
        if(result1 || result2) {
           result = result1 > 0 ? result1 : result2;
           printf("%s: %d: set one servo word failed\n", __FILE__, __LINE__);
@@ -295,8 +271,8 @@ int set_default_pos()
 
    //更新当前姿态
    for(int i = 0; i < 5; i++) {
-       CURLARM[i] = LKeyPos[5][i];
-       CURRARM[i] = RKeyPos[5][i];
+       CURLARM[i] = LKeyPos[0][i];
+       CURRARM[i] = RKeyPos[0][i];
    }
 
    //设置当前位置
@@ -311,7 +287,7 @@ int set_default_pos()
 函数意义：
     设置LED的模式
 参数意义：
-    _flag：1：表示空闲模式
+    _flag：1：表示菜单模式
            2：表示演奏模式
 返回值：
     如果执行成功，返回0;
@@ -325,7 +301,7 @@ int set_led_mode(char _flag)
     //设置控制数据
     value[0] = 0x01; //模式选择
     value[1] = 0x01; //LED控制权
-    value[2] = 0x02; //每个键LED数目
+    value[2] = 0x05; //每个键LED数目
     value[3] = 0x32; //演奏键超时
     value[4] = 0x01; //对键值反馈的清零
     value[5] = 0x00; //目标简直1-8
@@ -363,9 +339,9 @@ int set_led_mode(char _flag)
 int get_user_input()
 {
     UINT8_T moveIncre1, moveIncre2, leftPut, rightPut;
-    int result, diff;
+    int result, diff, rang = 17;
     bool isFirst = true;
-    int detectNum = 10;
+    int detectNum = 100;
 
     while(detectNum >= 0) {
         //获取LED地址为0x46的值
@@ -386,115 +362,36 @@ int get_user_input()
             leftPut = pLed->read_Lamps_StatusPacket(2);
             rightPut = pLed->read_Lamps_StatusPacket(3);
 
-            if(leftPut)
-                return 0x01;
-            else if(rightPut)
-                return 0x04;
-            else if((-33 <= diff) && (diff < 0-2)) {
+            if((-rang <= diff) && (diff < 0-2)) {
                 //当增量只有<=2时，不算移动
                 return 0x02; //左移动
             }
-            else if((diff <= 255-2) && (diff >= 222))
+            else if((diff <= 255-2) && (diff >= 255 - rang))
                 return 0x02; //左移动
-            else if((diff <= 33) && (diff > 0+2))
+            else if((diff <= rang) && (diff > 0+2))
                 return 0x03; //右移动
-            else if((diff <= -222) && (diff >= -255+2))
+            else if((diff <= rang - 255) && (diff >= 2-255))
                 return 0x03; //右移动
+            else if(leftPut)
+                return 0x01;
+            else if(rightPut)
+                return 0x04;
             else{}
         }
         detectNum -= 1;
     }
     return 0x00;
-    /*
-    if(detectNum < 0) {
-        //表示没有任何输入，返回0x00
-        return 0x00;
-    }
-    else{
-        if(leftPut) {
-            //等待用户pushUp
-            printf("\n");
-            while(leftPut) {
-                result = pLed->get_Lamps_bytes(LEDID, ADDR_RTKEYVALUE1, 1);
-                if(result) {
-                    printf("%s: %d: get lamps bytes failed\n", __FILE__, __LINE__);
-                    return -abs(result);
-                }
-                leftPut = pLed->read_Lamps_StatusPacket(0);
-                leftPut = leftPut&0x01;
-                printf("\r%s: %d: leftPut(%d)...", __FILE__, __LINE__, leftPut);
-            }
-            printf("\n");
-            return 0x01;
-        }
-
-        if(rightPut) {
-            //等待用户pushUp
-            printf("\n");
-            while(rightPut) {
-                result = pLed->get_Lamps_bytes(LEDID, ADDR_RTKEYVALUE3, 1);
-                if(result) {
-                    printf("%s: %d: get lamps bytes failed\n", __FILE__, __LINE__);
-                    return -abs(result);
-                }
-                rightPut = pLed->read_Lamps_StatusPacket(0);
-                rightPut = rightPut&0x01;
-                printf("\r%s: %d: rightPut(%d)...", __FILE__, __LINE__, rightPut);
-            }
-            printf("\n");
-            return 0x04;
-        }
-    }
-    */
-    /*
-    //获取LED地址为0x46的值
-    result = pLed->get_Lamps_bytes(LEDID, ADDR_MOVEADDVALUE, 4);
-    moveIncre1 = pLed->read_Lamps_StatusPacket(0);
-    leftPut = pLed->read_Lamps_StatusPacket(2);
-    rightPut = pLed->read_Lamps_StatusPacket(3);
-    //printf("%s: %d: moveIncre1(%x) leftPut(%x) rightPut(%x)\n", __FILE__, __LINE__, moveIncre1, leftPut, rightPut);
-    if(leftPut) //按下左键
-        return 0x01;
-    else if(rightPut) //按下了右键
-        return 0x04;
-    else{   //检测是否存在滑动
-        while (detectNum >= 0) {
-            result = pLed->get_Lamps_bytes(LEDID, ADDR_MOVEADDVALUE, 4);
-            if(result) {
-                printf("%s: %d: get lamps bytes failed\n", __FILE__, __LINE__);
-                return -abs(result);
-            }
-            moveIncre2 = pLed->read_Lamps_StatusPacket(0);
-            leftPut = pLed->read_Lamps_StatusPacket(2);
-            rightPut = pLed->read_Lamps_StatusPacket(3);
-            //printf("%s: %d: moveIncre1(%x) leftPut(%x) rightPut(%x)\n", __FILE__, __LINE__, moveIncre1, leftPut, rightPut);
-            if(leftPut)
-                return 0x01;  //返回键
-            else if(rightPut)
-                return 0x04;  //确认键
-            else {
-                diff = moveIncre2 - moveIncre1;
-                if((-33 <= diff) && (diff < 0))
-                    return 0x02; //左移动
-                else if((diff <= 255) && (diff >= 222))
-                    return 0x02; //左移动
-                else if((diff <= 33) && (diff > 0))
-                    return 0x03; //右移动
-                else if((diff <= -222) && (diff >= -255))
-                    return 0x03; //右移动
-                else{}
-            }
-            detectNum -= 1;
-        }
-        return 0x00; //返回无选择
-    }*/
 }
 
 /******************************
 函数意义：
-    设置琴键高亮
+    设置琴键高亮。
+    由于LED排灯顺序与琴键的顺序相反
+    所以，要把琴键的序号转换为LED排灯
+    的序号。
 参数意义：
-    _ledNum:琴键序号
+    _ledNum:琴键序号。需要转化为排灯
+    的序号：_ledNum=19-_ledNum
 返回值：
     如果执行成功，返回true；
     如果执行失败，返回false;
@@ -504,10 +401,12 @@ bool set_led_light(int _ledNum)
     UINT8_T value[8];
     int _abnormal;
 
+    _ledNum = 19 - _ledNum;
+
     //设置控制数据
     value[0] = 0x02; //模式选择:演奏模式
     value[1] = 0x01; //LED控制权
-    value[2] = 0x02; //每个键LED数目
+    value[2] = 0x05; //每个键LED数目
     value[3] = 0x32; //演奏键超时
     value[4] = 0x01; //对键值反馈的清零
     value[5] = 0x00; //目标简直1-8
@@ -535,9 +434,12 @@ bool set_led_light(int _ledNum)
 
 /*********************************
 函数意义：
-    获取指定led灯是否被获取的消息
+    获取指定琴键对应的led灯的状态信息。
+    由于，LED排灯顺序与琴键顺序是相反的
+    所以，要把琴键顺序转化为排灯顺序。
+    _ledNum = 19 - _ledNum;
 参数意义：
-    _ledNum:指定的led灯
+    _ledNum:琴键的序号。
 返回值：
     如果用户击打成功，返回true;
     如果用户击打失败，返回false;
@@ -547,6 +449,8 @@ bool get_led_statue(int _ledNum)
     UINT8_T value1, value2, value3;
     UINT8_T value;
     int result;
+
+    _ledNum = 19 - _ledNum;
 
     //获取LED地址为0x43的值
     result = pLed->get_Lamps_bytes(LEDID, ADDR_PCKEYVALUE1, 3);
@@ -600,7 +504,7 @@ int play_music(UINT8_T _songNum)
     char path[20] = {0, };
     int start, end, result1, result2, result;
     double delay1, delay2;
-    long delay;
+    long delay, tmRate = 1.5;
 
     sdValue[0] = FIVEARMID;
     sprintf(path, "songs/%d.txt", (int)_songNum);
@@ -615,10 +519,6 @@ int play_music(UINT8_T _songNum)
         printf("%s: %d: read file %s failed\n", __FILE__, __LINE__, path);
         return FILE_NO;
     }
-    else{
-        //设置琴键高亮
-        set_led_light(start);
-    }
 
     //上紧刚度
     result = set_enable_relax(1);
@@ -628,25 +528,32 @@ int play_music(UINT8_T _songNum)
     }
     delay_ms(1000.0);
 
+    //运动到第一个位置
     if(start <= 9) {
         result1 = set_arm_bytes(2, 'L', Goal_Position, LKeyPos[start]);
-        result2 =  wait_arm_stop_exten('L', 10);
+        result2 =  wait_arm_stop_exten('L', 15);
         if(result1 || result2) {
             result = result1 > 0 ? result1 : result2;
             printf("%s: %d: set arm and wait arm stop failed\n", __FILE__, __LINE__);
             return result;
         }
+        CURLNUM = start;
     }
     else{
         result1 = set_arm_bytes(2, 'R', Goal_Position, RKeyPos[start - 9]);
-        result2 = wait_arm_stop_exten('R', 10);
+        result2 = wait_arm_stop_exten('R', 15);
         if(result1 || result2) {
             result = result1 > 0 ? result1 : result2;
             printf("%s: %d: set arm and wait arm stop failed\n", __FILE__, __LINE__);
             return result;
         }
+        CURRNUM = start;
     }
     CURKEYNUM = start;
+
+    //设置琴键高亮
+    set_led_light(start);
+    delay_ms(500.0);
 
     sdValue[1] = (UINT8_T)start;
     bool _statue = get_led_statue(start);
@@ -675,35 +582,39 @@ int play_music(UINT8_T _songNum)
             printf("%s: %d: read fiel %s faield\n", __FILE__, __LINE__, path);
             return FILE_NO;
         }
-        printf("\n%s: %d: hello1\n", __FILE__, __LINE__);
+
         if(0 == end) {
         	delay = (long)(delay2 * 80.0 / 0.25);
-        	delay_ms(delay);
+        	delay_us(delay * 1000 * tmRate);
         }
         else{
-            //设置琴键高亮
-            set_led_light(end);
-            printf("\n%s: %d: hello2\n", __FILE__, __LINE__);
             //移动到目标位置
-            result = from_A_to_B_order(start, end);
+            pthread_mutex_lock(&mutex);  //加锁
+            result = from_A_to_B_order1(start, end, 1);
+            pthread_mutex_unlock(&mutex);//解锁
             if(result) {
                 printf("%s: %d: from A to B failed\n", __FILE__, __LINE__);
                 return result;
             }
+
+            //设置琴键高亮
+            set_led_light(end);
+
             //延时delay1
             delay = (long)(delay1 * 80.0 / 0.25);
-            delay_ms(delay);
-            printf("\n%s: %d: hello3\n", __FILE__, __LINE__);
+            delay_us(delay * 1000 * tmRate);
 
             //完成打击动作
             sdValue[1] = (UINT8_T)end;
             bool _statue = get_led_statue(end);
+            pthread_mutex_lock(&mutex);  //加锁
             result = hit_and_hit(end, _statue);
+            pthread_mutex_unlock(&mutex);//解锁
             if(result) {
                 printf("%s: %d: hit and hit failed\n", __FILE__, __LINE__);
                 return result;
             }
-            printf("\n%s: %d: hello4\n", __FILE__, __LINE__);
+
             //发送消息
             if(_statue) {
                 //击中琴键
@@ -719,7 +630,7 @@ int play_music(UINT8_T _songNum)
                 pProtoV3->sendMessage(0x40, 0x83, 2, sdValue);
                 pthread_mutex_unlock(&mutex);//解锁
             }
-            printf("\n%s: %d: hello5\n", __FILE__, __LINE__);
+
             //更新当前的值
             start = end;
             delay1 = delay2;
@@ -735,21 +646,22 @@ int play_music(UINT8_T _songNum)
             break;
         }
     }
-    printf("\n%s: %d: hello6\n", __FILE__, __LINE__);
+
     //回到初始位置
-    result = from_A_to_B_order(CURKEYNUM, 14);
+    result = from_A_to_B_order1(CURKEYNUM, 14, 0);
     if(result) {
         printf("%s: %d: from A to from B faile\n", __FILE__, __LINE__);
         return result;
     }
     CURKEYNUM = 14; CURRNUM = 14;
-    result = from_A_to_B_order(CURKEYNUM, 5);
+    result = from_A_to_B_order1(CURKEYNUM, 5, 0);
     if(result) {
         printf("%s: %d: from A to B failed\n", __FILE__, __LINE__);
         return result;
     }
     CURKEYNUM = 5; CURLNUM = 5;
-    delay_ms(1000);
+    set_enable_relax(0);
+    delay_ms(1000.0);
 
     //发送演奏结束的消息
     if(!feof(fpR)) {
@@ -887,8 +799,12 @@ int wait_arm_stop_exten(char _flag, int _exten)
 ********************************/
 int hit_and_hit(int num, bool _isHit)
 {
-    int diffK[10] = {3, 8, 12, 16, 20, 24, 28, 31, 36, 36};
+    //int diffK[12] = {3, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 44};
+    //int diffK[10] = {3, 8, 18, 28, 36, 40, 44, 47, 50, 55};
+    int diffK[10] = {3, 8, 18, 28, 36, 40, 44, 47, 50, 55};
     int posK, i, result;
+
+    //_isHit = true;
 
     if(num <= 9) {
         result = pAX12->set_one_servo_bytes(2, 10, Moving_Speed, 559);
@@ -896,7 +812,7 @@ int hit_and_hit(int num, bool _isHit)
             printf("%s: %d: set one servo word\n", __FILE__, __LINE__);
             return result;
         }
-        for(i = 0; i < 9; i++) {
+        for(i = 0; i < 10; i++) {
             posK = LKeyPos[num][4] - diffK[i];
             if(_isHit) {
                 result = pAX12->set_one_servo_bytes(2, 10, Goal_Position, posK);
@@ -905,14 +821,14 @@ int hit_and_hit(int num, bool _isHit)
                     return result;
                 }
             }
-            delay_ms(5.0);
+            delay_us(5.0 * 1000);
         }
         result = pAX12->set_one_servo_bytes(2, 10, Moving_Speed, 759);
         if(result) {
             printf("%s: %d: set one servo word failed\n", __FILE__, __LINE__);
             return result;
         }
-        for(i = 7; i >= 0; i--) {
+        for(i = 6; i >= 0; i--) {
             posK = LKeyPos[num][4] - diffK[i];
             if(_isHit) {
                 result = pAX12->set_one_servo_bytes(2, 10, Goal_Position, posK);
@@ -921,8 +837,9 @@ int hit_and_hit(int num, bool _isHit)
                     return result;
                 }
             }
-            delay_ms(5.0);
+            delay_us(5.0 * 1000);
         }
+
     }
     if(num >= 10) {
         result = pAX12->set_one_servo_bytes(2, 5, Moving_Speed, 559);
@@ -930,7 +847,7 @@ int hit_and_hit(int num, bool _isHit)
             printf("%s: %d: set one servo word\n", __FILE__, __LINE__);
             return result;
         }
-        for(i = 0; i < 9; i++) {
+        for(i = 0; i < 10; i++) {
             posK = RKeyPos[num-9][4] + diffK[i];
             if(_isHit) {
                 result = pAX12->set_one_servo_bytes(2, 5, Goal_Position, posK);
@@ -939,14 +856,14 @@ int hit_and_hit(int num, bool _isHit)
                     return result;
                 }
             }
-            delay_ms(5.0);
+            delay_us(5.0 * 1000);
         }
         result = pAX12->set_one_servo_bytes(2, 5, Moving_Speed, 759);
         if(result) {
             printf("%s: %d: set one servo word\n", __FILE__, __LINE__);
             return result;
         }
-        for(i = 7; i >= 0; i--) {
+        for(i = 6; i >= 0; i--) {
             posK = RKeyPos[num-9][4] + diffK[i];
             if(_isHit) {
                 result = pAX12->set_one_servo_bytes(2, 5, Goal_Position, posK);
@@ -955,9 +872,11 @@ int hit_and_hit(int num, bool _isHit)
                     return result;
                 }
             }
-            delay_ms(5.0);
+            delay_us(5.0 * 1000);
         }
+
     }
+
     return 0;
 }
 
@@ -974,7 +893,7 @@ int hit_and_hit(int num, bool _isHit)
 int from_A_to_B_order(int num1, int num2)
 {
     int base = 1, mid, start[5], end[5], middle[5], posK;
-    int i, j, path[18][5], diffK[5], speK[5], pathNum = 9;
+    int i, j, path[12][5], diffK[5], speK[5], pathNum = 6;
     int result;
     double unit[5];
 
@@ -1034,9 +953,12 @@ int from_A_to_B_order(int num1, int num2)
         return OTHER_ERROR;
 
     //计算刻度之差和速度
+    //float speBase = 50.0;
+    //float k = (1020.0 - speBase)/(1023.0 - 0.0);
     for(i = 0; i < SERVO_NUM/2; i++) {
         diffK[i] = end[i] - start[i];
-        speK[i] = (int)(((double)abs(diffK[i]) + 2));
+        //speK[i] = (int)((float)abs(diffK[i]) * k + speBase);
+        speK[i] = (int)(((double)abs(diffK[i]) + 2.0) * 3.5);
         if(speK[i] >= 1020)
             speK[i] = 1020;
     }
@@ -1062,6 +984,15 @@ int from_A_to_B_order(int num1, int num2)
     		path[i + pathNum - 1][j] = unit[j] * i + path[pathNum-1][j];
     }
 
+    /*
+    //计算path
+    for(i = 1; i <= pathNum; i++) {
+        for(j = 0; j < 5; j++) {
+            path[i - 1][j] = unit[j] * i;
+        }
+    }
+    */
+
     //从A运动到B
     //设置速度
     for(i = 0; i < SERVO_NUM/2; i++) {
@@ -1081,14 +1012,206 @@ int from_A_to_B_order(int num1, int num2)
                 printf("%s: %d: set one servo word failed\n", __FILE__, __LINE__);
                 return result;
             }
-            delay_ms(2.5);
+            delay_us(2.5 * 1000);
         }
+        //delay_ms(7.5);
     }
     for(j = 0; j < 5; j++) {
         result = pAX12->set_one_servo_bytes(2, j + base, Goal_Position, end[j]);
         if(result) {
             printf("%s: %d: set one servo word\n", __FILE__, __LINE__);
             return result;
+        }
+    }
+    //delay_ms(15.0);
+
+    //设置提示灯亮
+    //set_led_light(num2);
+    /*
+    if(1 == base) {
+        //等待右臂运动停止
+        wait_arm_stop_exten('R', 15);
+    }
+    else{
+        //等待左臂运动停止
+        wait_arm_stop_exten('L', 15);
+    }
+    */
+
+    return 0;
+}
+
+/***********************************************
+函数意义：
+    控制机械臂从num1平滑的运动到num2。
+    平滑的过程为：如果num1=1, num2=4
+    机械臂要经过1、2、3、4
+参数意义：
+    num1：起始位置
+    num2: 终止位
+    lastChoose:控制最后位置
+返回值:
+    如果执行成功，返回0；
+    如果执行失败，返回错误代码
+***********************************************/
+int from_A_to_B_order1(int num1, int num2, int lastChoose)
+{
+    int base = 1, start, end, increDirect = 1;
+    double speUnit = 0.666, posUnit = 0.29;
+    int srcPosK[5], endPosK[5];
+    double diffK[5];
+    int speK[5];
+    double delayTm = 0.0;
+
+    // lastChoose的范围
+    if(lastChoose != 0 && lastChoose != 1)
+        return OTHER_ERROR;
+
+    //判断运动方向
+    if((num1 <= 9) && (num2 <= 9)) {
+        // 完全在左边运动
+        base = 6; //舵机编号基数
+        start = num1;
+        end = num2;
+        CURLNUM = num2;
+        if(num1 < num2) {
+            //1:表示递增；-1：表示递减；0:敲相同位置
+            increDirect = 1;
+        }
+        else if(num1 > num2) {
+            increDirect = -1;
+        }
+        else {
+            increDirect = 0;
+        }
+    }
+    else if((num1 <= 9) && (num2 >= 10)) {
+        // 从左向右运动
+        base = 1;
+        start = CURRNUM;
+        end = num2;
+        CURRNUM = num2;
+        if(start < end)
+            increDirect = 1;
+        else if(start > end)
+            increDirect = -1;
+        else
+            increDirect = 0;
+    }
+    else if((num1 >= 10) && (num2 <= 9)) {
+        //从右运动到左
+        base = 6;
+        start = CURLNUM;
+        end = num2;
+        CURLNUM = num2;
+        if(start < end)
+            increDirect = 1;
+        else if(start > end)
+            increDirect = -1;
+        else
+            increDirect = 0;
+    }
+    else if((num1 >= 10) && (num2 >= 10)) {
+        //从右运动到右
+        base = 1;
+        start = num1;
+        end = num2;
+        CURRNUM = end;
+        if(num1 < num2) {
+            increDirect = 1;
+        }
+        else if(num1 > num2) {
+            increDirect = -1;
+        }
+        else{
+            increDirect = 0;
+        }
+    }
+    else {
+        return OTHER_ERROR;
+    }
+
+    // 进行运动控制
+    //左边的递增运动
+    if((1 == increDirect) && (end <= 9)) {
+        // 左边的递增运动
+        for(int i = start; i < end; i += 1) {
+            for(int j = 0; j < SERVO_NUM/2; j++) {
+                diffK[j] = (double)abs(LKeyPos[i+1][j] - LKeyPos[i][j]);
+                speK[j] = (int)((diffK[j] + 2.0) * 3.5);
+                if(speK[j] > 1020)  speK[j] = 1020;
+                delayTm = (diffK[j]*posUnit)/(speK[j]*speUnit);
+                //设置速度
+                pAX12->set_one_servo_bytes(2, j+base, Moving_Speed, speK[j]);
+                //设置目标位置
+                pAX12->set_one_servo_bytes(2, j+base, Goal_Position, LKeyPos[i+1][j]);
+            }
+            delay_us(delayTm*1000000);
+        }
+    }
+    else if((1 == increDirect) && (end >= 10)) {
+        // 右边的递增运动
+        for(int i = start; i < end; i += 1) {
+            for(int j = 0; j < SERVO_NUM/2; j++) {
+                diffK[j] = (double)abs(RKeyPos[i+1 - 9][j] - RKeyPos[i-9][j]);
+                speK[j] = (int)((diffK[j] +2.0) * 3.5);
+                if(speK[j] > 1020)  speK[j] = 1020;
+                delayTm = (diffK[j]*posUnit) / (speK[j]*speUnit);
+                //设置速度
+                pAX12->set_one_servo_bytes(2, j+base, Moving_Speed, speK[j]);
+                //设置目标位置
+                pAX12->set_one_servo_bytes(2, j+base, Goal_Position, RKeyPos[i+1-9][j]);
+            }
+            delay_us(delayTm*1000000);
+        }
+    }
+    else if((-1 == increDirect) && (end <= 9)) {
+        // 左边的递减运动
+        for(int i = start; i > end; i--) {
+            for(int j = 0; j < SERVO_NUM/2; j++) {
+                diffK[j] = (double)abs(LKeyPos[i-1][j] - LKeyPos[i][j]);
+                speK[j] = (int)((diffK[j] + 2.0) * 3.5);
+                if(speK[j] > 1020)  speK[j] = 1020;
+                delayTm = (diffK[j]*posUnit)/(speK[j]*speUnit);
+                //设置速度
+                pAX12->set_one_servo_bytes(2, j+base, Moving_Speed, speK[j]);
+                //设置目标位置
+                pAX12->set_one_servo_bytes(2, j+base, Goal_Position, LKeyPos[i-1][j]);
+            }
+            delay_us(delayTm*1000000);
+        }
+    }
+    else if((-1 == increDirect) && (end >= 10)) {
+        // 右边的递减运动
+        for(int i = start; i > end; i--) {
+            for(int j = 0; j < SERVO_NUM/2; j++) {
+                diffK[j] = (double)abs(RKeyPos[i-1 - 9][j] - RKeyPos[i-9][j]);
+                speK[j] = (int)((diffK[j] +2.0) * 3.5);
+                if(speK[j] > 1020)  speK[j] = 1020;
+                delayTm = (diffK[j]*posUnit) / (speK[j]*speUnit);
+                //设置速度
+                pAX12->set_one_servo_bytes(2, j+base, Moving_Speed, speK[j]);
+                //设置目标位置
+                pAX12->set_one_servo_bytes(2, j+base, Goal_Position, RKeyPos[i-1-9][j]);
+            }
+            delay_us(delayTm*1000000);
+        }
+    }
+    else {
+        delayTm = posUnit/(speUnit*3.5);
+        delay_us((delayTm + 0.1) * 1000000);
+    }
+
+    //设置最后的目标位置
+    for(int j = 0; j < SERVO_NUM/2; j++) {
+        if(end<=9) {
+            //end在左半部分
+            pAX12->set_one_servo_bytes(2, j+base, Goal_Position, LKeyPos[end*lastChoose][j]);
+            CURLARM[j] = LKeyPos[end*lastChoose][j];
+        }
+        else {
+            pAX12->set_one_servo_bytes(2, j+base, Goal_Position, RKeyPos[(end-9)*lastChoose][j]);
+            CURRARM[j] = RKeyPos[(end-9)*lastChoose][j];
         }
     }
 
@@ -1250,7 +1373,7 @@ void* actionProcesThread(void* arg)
 
     delay_start(); //设置起始时间
     while(true) {
-        //LED进入菜单模式
+        // LED进入菜单模式
         result = set_led_mode(1);
         if(result) {
             sprintf("%s: %d: set led mode failed\n", __FILE__, __LINE__);
@@ -1263,12 +1386,13 @@ void* actionProcesThread(void* arg)
         else
             printf("%s: %d: set sed mode 1 succes\n", __FILE__, __LINE__);
 
-        //判断用户输入
+        // 判断用户输入
         printf("%s: %d: waitting for user inputing...\n", __FILE__, __LINE__);
         while(true) {
             //获取用户输入
             result = get_user_input(); //获取用户的输入信息
             printf("\r%s: %d: result(%d) waiting for inputing...", __FILE__, __LINE__, result);
+            fflush(stdout);
 
             //检测一体机是否发送了歌曲信息
             pthread_mutex_lock(&mutex);  //加锁
@@ -1305,17 +1429,20 @@ void* actionProcesThread(void* arg)
                 else {
                     delay_start();
                     printf("\n%s: %d: valid result(%d)...\n", __FILE__, __LINE__, result);
-                    pthread_mutex_lock(&mutex);  //加锁
+                    pthread_mutex_lock(&mutex);    //加锁
                     pProtoV3->sendMessage(0x40, 0x84, 1, sdValue);
                     pthread_mutex_unlock(&mutex);  //解锁
                 }
-
             }
             else{
             }
         }
 
-        //进入演奏模式
+        // 上刚度，进入准备演奏的姿态
+        set_default_pos();
+        delay_ms(500.0);
+
+        // 进入演奏模式
         result = play_music(_songNum);
         if(result) {
             //如果演奏失败，发送失败消息

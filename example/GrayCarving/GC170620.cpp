@@ -20,18 +20,22 @@ DataPreUpper and DataPreDown
 ****************************/
 #define DataPreUpper    (50)
 #define DataPreDown     (1)
-#define LASER           (16)  //激光头端口号
-#define LASER_OPEN      ('0') //打开激光头
-#define LASER_CLOSE     ('1') //关闭激光头
+#define LASER           (16)    //激光头端口号
+#define LASER_OPEN      ('0')   //打开激光头
+#define LASER_CLOSE     ('1')   //关闭激光头
+#define RANGK           (4096.0)  //多级刻度范围
+#define RANGANGLE       (360.0)   //角度范围
+#define MAXSPEED        (360.0)   //舵机角速度360度/s
+#define ACCUNIT         (4.5114787) //每个加速度刻度表示加速度度数
 
 char SERVODEVICE[] = "/dev/ttyUSB0"; //舵机串口号
 int SERVOBAUD = 115200;
-double Height[3] = {-290.0, -300.0, -310.0};
+double Height[3] = {-280.0, -290.0, -300.0};
 int PosDataPre = 1;
 /* 位置数据精细度，越小越精细
  * 范围[1-50]:[DataPreDown, DataPreUpper]
 */
-char PicPath[] = "a50mm.txt"; //存储图片原始数据
+char PicPath[] = "r0_5mm.txt"; //存储图片原始数据
 char Tra_k[] = "trak.txt"; //存储舵机轨迹刻度的文件
 char hardSizeFile[] = "hardSizeFile.txt";
 int UpdatePosFre = 125.0; //位置更新频率125Hz
@@ -45,6 +49,9 @@ bool set_posture(float _xyz[]);
 bool get_traK_file(char *picPath);
 bool excute_traK_file();
 
+// 功能函数
+bool moveWithMaxSpeed(float srcXYZ[], float destXYZ[]);
+
 int main()
 {
     //系统初始化
@@ -54,6 +61,7 @@ int main()
     }
 
     //获取轨迹刻度文件
+    /*
     if(!get_traK_file(PicPath)) {
         printf("%s: %d: function get_traK_file failed\n", __FILE__, __LINE__);
         return 0;
@@ -78,9 +86,24 @@ int main()
     //计算结束时间
     double delayTm = delay_end();
     printf("%s: %d: the delayTm(%lf)\n", __FILE__, __LINE__, delayTm);
+    */
+
+
+    moveWithMaxSpeed(srcXYZ, destXYZ1);
+    delay_ms(1000.0);
+    printf("%s: %d: start to draw...\n", __FILE__, __LINE__);
+    getchar();
+    while(true) {
+        moveWithMaxSpeed(destXYZ1, destXYZ2);
+        moveWithMaxSpeed(destXYZ2, destXYZ3);
+        moveWithMaxSpeed(destXYZ3, destXYZ1);
+        fprintf(fp, "%d\n", ++i);
+        fflush(fp);
+    }
 
     //关闭激光头
     Hardware_close_port();
+    fclose(fp);
 
     return 1;
 }
@@ -160,27 +183,27 @@ bool initial_sys()
     }
     else
         printf("%s: %d: set id(1,2,3) PID_P success\n", __FILE__, __LINE__);
-    result1 = pXQH7->set_one_servo_bytes(1, 1, 27, 32);
-    result2 = pXQH7->set_one_servo_bytes(1, 2, 27, 32);
-    result3 = pXQH7->set_one_servo_bytes(1, 3, 27, 32);
+    result1 = pXQH7->set_one_servo_bytes(1, 1, 27, 12);
+    result2 = pXQH7->set_one_servo_bytes(1, 2, 27, 12);
+    result3 = pXQH7->set_one_servo_bytes(1, 3, 27, 12);
     if(result1 || result2 || result3) {
         printf("%s: %d: set id(1,2,3) I_PID failed\n", __FILE__, __LINE__);
         return false;
     }
     else
         printf("%s: %d: set id(1,2,3) PID_I success\n", __FILE__, __LINE__);
-    result1 = pXQH7->set_one_servo_bytes(1, 1, 26, 30);
-    result2 = pXQH7->set_one_servo_bytes(1, 2, 26, 30);
-    result3 = pXQH7->set_one_servo_bytes(1, 3, 26, 30);
+    result1 = pXQH7->set_one_servo_bytes(1, 1, 26, 10);
+    result2 = pXQH7->set_one_servo_bytes(1, 2, 26, 10);
+    result3 = pXQH7->set_one_servo_bytes(1, 3, 26, 10);
     if(result1 || result2 || result3) {
         printf("%s: %d: set id(1,2,3) P_PID failed\n", __FILE__, __LINE__);
         return false;
     }
     else
         printf("%s: %d: set id(1,2,3) PID_D success\n", __FILE__, __LINE__);
-    result1 = pXQH7->set_one_servo_bytes(1, 1, 73, 10);
-    result2 = pXQH7->set_one_servo_bytes(1, 2, 73, 10);
-    result3 = pXQH7->set_one_servo_bytes(1, 3, 73, 10);
+    result1 = pXQH7->set_one_servo_bytes(1, 1, 73, 50);
+    result2 = pXQH7->set_one_servo_bytes(1, 2, 73, 50);
+    result3 = pXQH7->set_one_servo_bytes(1, 3, 73, 50);
     if(result1 || result2 || result3) {
         printf("%s: %d: set id(1,2,3) Acc statue failed\n", __FILE__, __LINE__);
         return false;
@@ -312,5 +335,62 @@ bool excute_traK_file()
 
     fclose(fp);
 
+    return true;
+}
+
+/****************************************************
+函数意义：
+    机械臂以最快的速度从坐标srcXYZ[],运动到destXYZ[]
+参数意义：
+    srcXYZ:起始坐标
+    destXYZ:终止坐标
+返回值：
+    执行成功，返回true;
+    执行失败，返回false;
+*****************************************************/
+bool moveWithMaxSpeed(float srcXYZ[], float destXYZ[])
+{
+    int srcGoalK[3], destGoalK[3], exten[3] = {10, 10, 10}, exten1[3] = {35, 35, 35};
+    int diffK[3];
+    double angleDiff[3], minTm;
+
+    float srcXYZ[3] = {0.0, 0.0, -280.0};
+    float destXYZ1[3] = {0.0, 50.0, -300.0};
+    float destXYZ2[3] = {-50.0, -50.0, -300.0};
+    float destXYZ3[3] = {50.0, -50.0, -300.0};
+    FILE *fp = NULL;
+    int i = 0;
+    fp = fopen("num.txt", "w");
+
+    //从初始位置运动到起始位置
+
+
+    //转换坐标到目标刻度
+    pDParser->trans_coor_to_k(srcXYZ, srcGoalK);
+    pDParser->trans_coor_to_k(destXYZ, destGoalK);
+
+    //运动到起始作坐标
+    set_posture(srcXYZ);
+    pXQH7->wait_for_many_servo_exten(exten);
+
+    //运动到目标位置
+    set_posture(destXYZ);
+    pXQH7->wait_for_many_servo_exten(exten1);
+    Hardware_write_gpio(LASER, LASER_OPEN);
+
+    //下降
+    destXYZ[2] -= 20.0;
+    set_posture(destXYZ);
+    pXQH7->wait_for_many_servo_exten(exten);
+
+    //上升
+    destXYZ[2] += 20.0;
+    set_posture(destXYZ);
+    pXQH7->wait_for_many_servo_exten(exten1);
+    Hardware_write_gpio(LASER, LASER_CLOSE);
+
+    //计算实际运动时间
+
+    //返回运算结果
     return true;
 }

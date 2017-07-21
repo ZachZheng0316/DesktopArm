@@ -130,11 +130,11 @@ int AX12A::get_one_servo_bytes(int byteNum, int id, int address)
 
     while(readUpperLimit >= 0) {
         if(1 == byteNum) {
-            value = abs(pPacket->read_byte(id, address));
+            value = abs(pPacket->read_byte((UINT8_T)id, (UINT8_T)address));
             value %= 256;
         }
         else if(2 == byteNum) {
-            value = abs(pPacket->read_byte(id, address));
+            value = abs(pPacket->read_word((UINT8_T)id, (UINT8_T)address));
             value %= 4096;
         }
         else{
@@ -226,8 +226,9 @@ int AX12A::wait_for_one_servo_exten(int id, int exten)
         if(value < 0)
             return value;
         diff = abs(goal_pos - value);
+        printf("%s: %d: id(%d)--Goal_Position(%d)--Present_Position(%d)--diff(%d)--exten(%d)\n", __FILE__, __LINE__, id, goal_pos, value, diff, exten);
     }while(diff >= exten);
-    printf("%s: %d: id(%d)--Present_Position(%d)--exten(%d)\n", __FILE__, __LINE__, id, value, exten);
+    //printf("%s: %d: id(%d)--Present_Position(%d)--exten(%d)\n", __FILE__, __LINE__, id, value, exten);
 }
 
 /***********************************************

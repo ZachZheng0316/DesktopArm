@@ -68,6 +68,20 @@ void delay_ms(double msec)
     }while(diff <= msec);
 }
 
+
+//微妙延迟函数
+void delay_us(double usec)
+{
+    struct timeval start, end;
+    unsigned long diff;
+
+    gettimeofday(&start, NULL);
+    do{
+        gettimeofday(&end, NULL);
+        diff = 1000000*(end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec);
+    }while(diff <= usec);
+}
+
 //函数延迟开始
 struct timespec TSStart;
 void delay_start()

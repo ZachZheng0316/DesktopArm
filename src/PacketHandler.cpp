@@ -264,7 +264,7 @@ int PacketHandler::rx_packet(void)
         return COMM_RXSUCCESS;
     }
 
-    //printf("%s: %d: recv Statue: \n", __FILE__, __LINE__);
+    printf("%s: %d: recv Statue: \n", __FILE__, __LINE__);
     while (true) {
         //从管道读取数据
         retNum = pPort->ReadPort((UINT8_T*)&gStatusPacket[_rx_length], _wait_length - _rx_length);
@@ -354,7 +354,7 @@ int PacketHandler::rx_packet(void)
 bool PacketHandler::txrx_packet(void)
 {
     //清空端口
-    //clear_port();
+    clear_port();
 
     //发送指令
     tx_packet();
