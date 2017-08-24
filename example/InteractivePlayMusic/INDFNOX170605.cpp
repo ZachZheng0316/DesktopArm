@@ -36,7 +36,8 @@ bool ISSTART = true;   //
 ProtocolV3 *pProtoV3 = NULL; //协议V3
 LampsControl *pLed = NULL;   //LED控制类
 AX12A *pAX12 = NULL;         //AX12舵机控制类
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER; //互斥锁
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;  // 互斥锁
+pthread_mutex_t mutex2 = PTHREAD_MUTEX_INITIALIZER; // 互斥锁
 
 //主要函数
 bool initial_sys();
@@ -46,6 +47,8 @@ int get_user_input();
 bool set_led_light(int _ledNum);
 bool get_led_statue(int _ledNum);
 int play_music(UINT8_T _songNum);
+int get_hands_num(int hans[]);
+void send_rt_hands();
 void clear_sys();
 
 //细节函数
@@ -315,7 +318,9 @@ int set_led_mode(char _flag)
     else
         return OTHER_ERROR;
 
+    pthread_mutex_lock(&mutex);
     _abnormal = pLed->set_Lamps_bytes(LEDID, ADDR_MODE, value, 8);
+    pthread_mutex_unlock(&mutex);
 
     return _abnormal;
 }
@@ -453,16 +458,17 @@ bool get_led_statue(int _ledNum)
     _ledNum = 19 - _ledNum;
 
     //获取LED地址为0x43的值
+    pthread_mutex_lock(&mutex);
     result = pLed->get_Lamps_bytes(LEDID, ADDR_PCKEYVALUE1, 3);
     if(result) {
         printf("%s: %d: get lamps bytes failed\n", __FILE__, __LINE__);
         return false;
     }
-
     value1 = pLed->read_Lamps_StatusPacket(0);
     value2 = pLed->read_Lamps_StatusPacket(1);
     value3 = pLed->read_Lamps_StatusPacket(2);
-    printf("%s: %d: _ledNum(%d) value1(%x) value2(%x) value3(%x)\n", __FILE__, __LINE__, _ledNum, value1, value2, value3);
+    pthread_mutex_unlock(&mutex);
+    printf("%s: %d: get_led_statue _ledNum(%d) value1(%x) value2(%x) value3(%x)\n", __FILE__, __LINE__, _ledNum, value1, value2, value3);
 
     if((1 <= _ledNum)&&(_ledNum <= 8)) {
         value = (UINT8_T)pow(2, _ledNum-1);
@@ -499,13 +505,22 @@ bool get_led_statue(int _ledNum)
 int play_music(UINT8_T _songNum)
 {
     FILE *fpR = NULL;
-    bool _songStop = false;
-    UINT8_T sdValue[3];
+    bool _songStop = false, firstKey = true, notEnd = true;
+    UINT8_T sdValue[4];
     char path[20] = {0, };
-    int start, end, result1, result2, result;
-    double delay1, delay2;
-    long delay, tmRate = 1.5;
+    int start, nextKey, end, result1, result2, result;
+    double delay1, nextdelay, delay2, tmRate = 1.5;
+    long delay;
 
+    // 机械臂上紧刚度
+    result = set_enable_relax(1);
+    if(result) {
+        printf("%s: %d: set_enable_relax failed\n", __FILE__, __LINE__);
+        return result;
+    }
+    delay_ms(1000.0);
+
+    // 打开曲目文件
     sdValue[0] = FIVEARMID;
     sprintf(path, "songs/%d.txt", (int)_songNum);
     fpR = fopen(path, "r");
@@ -520,121 +535,156 @@ int play_music(UINT8_T _songNum)
         return FILE_NO;
     }
 
-    //上紧刚度
-    result = set_enable_relax(1);
-    if(result) {
-        printf("%s: %d: set_enable_relax failed\n", __FILE__, __LINE__);
-        return result;
-    }
-    delay_ms(1000.0);
-
-    //运动到第一个位置
-    if(start <= 9) {
-        result1 = set_arm_bytes(2, 'L', Goal_Position, LKeyPos[start]);
-        result2 =  wait_arm_stop_exten('L', 15);
-        if(result1 || result2) {
-            result = result1 > 0 ? result1 : result2;
-            printf("%s: %d: set arm and wait arm stop failed\n", __FILE__, __LINE__);
-            return result;
-        }
-        CURLNUM = start;
-    }
-    else{
-        result1 = set_arm_bytes(2, 'R', Goal_Position, RKeyPos[start - 9]);
-        result2 = wait_arm_stop_exten('R', 15);
-        if(result1 || result2) {
-            result = result1 > 0 ? result1 : result2;
-            printf("%s: %d: set arm and wait arm stop failed\n", __FILE__, __LINE__);
-            return result;
-        }
-        CURRNUM = start;
-    }
-    CURKEYNUM = start;
-
-    //设置琴键高亮
-    set_led_light(start);
-    delay_ms(500.0);
-
-    sdValue[1] = (UINT8_T)start;
-    bool _statue = get_led_statue(start);
-    result = hit_and_hit(start, _statue);
-    if(result) {
-        printf("%s: %d: hit and hit failed\n", __FILE__, __LINE__);
-        return result;
-    }
-    if(_statue) {//获取用户状态
-        //用户击中琴键
-        sdValue[2] = 0x01;
-        pthread_mutex_lock(&mutex);  //加锁
-        pProtoV3->sendMessage(0x40, 0x83, 2, sdValue);
-        pthread_mutex_unlock(&mutex);//解锁
-    }
-    else{
-        //没有击中琴键
-        sdValue[2] = 0x00;
-        pthread_mutex_lock(&mutex);  //加锁
-        pProtoV3->sendMessage(0x40, 0x83, 2, sdValue);
-        pthread_mutex_unlock(&mutex);//解锁
-    }
-
-    while(!feof(fpR)) {
-        if(EOF == fscanf(fpR, "%d %lf\n", &end, &delay2)) {
-            printf("%s: %d: read fiel %s faield\n", __FILE__, __LINE__, path);
-            return FILE_NO;
-        }
-
-        if(0 == end) {
-        	delay = (long)(delay2 * 80.0 / 0.25);
-        	delay_us(delay * 1000 * tmRate);
-        }
-        else{
-            //移动到目标位置
-            pthread_mutex_lock(&mutex);  //加锁
-            result = from_A_to_B_order1(start, end, 1);
-            pthread_mutex_unlock(&mutex);//解锁
-            if(result) {
-                printf("%s: %d: from A to B failed\n", __FILE__, __LINE__);
-                return result;
+    while(notEnd) {
+        // 读取第二个琴键的位置
+        if(!feof(fpR)) {
+            if(EOF == fscanf(fpR, "%d %lf\n", &nextKey, &nextdelay)) {
+                printf("%s: %d: read fiel %s faield\n", __FILE__, __LINE__, path);
+                return FILE_NO;
             }
+        }
+        else {
+            // 表示曲目结束
+            notEnd = false;
+        }
 
-            //设置琴键高亮
-            set_led_light(end);
+        // 机械臂从当前位置运动到start的位置
+        if(firstKey) {
+            // 发送start和nextKey位置消息给主机pc
+            sdValue[1] = 0;
+            sdValue[2] = start;
+            printf("%s: %d: send pre and next key pos(%x, %x)\n", __FILE__, __LINE__, sdValue[1], sdValue[2]);
+            pthread_mutex_lock(&mutex);
+            pProtoV3->sendMessage(0x40, 0x86, 2, sdValue);
+            pthread_mutex_unlock(&mutex);
 
-            //延时delay1
-            delay = (long)(delay1 * 80.0 / 0.25);
-            delay_us(delay * 1000 * tmRate);
+            // 点亮琴键start
+            pthread_mutex_lock(&mutex);
+            set_led_light(start);
+            pthread_mutex_unlock(&mutex);
+            delay_us(1000 * 1000);
 
-            //完成打击动作
-            sdValue[1] = (UINT8_T)end;
-            bool _statue = get_led_statue(end);
-            pthread_mutex_lock(&mutex);  //加锁
-            result = hit_and_hit(end, _statue);
-            pthread_mutex_unlock(&mutex);//解锁
+            printf("%s: %d: first start(%d) lastChoose(1)\n", __FILE__, __LINE__, start);
+            //getchar();
+            //getchar();
+
+            // 运动到指定的琴键
+            if(start <= 9) {
+                result1 = set_arm_bytes(2, 'L', Goal_Position, LKeyPos[start]);
+                result2 =  wait_arm_stop_exten('L', 15);
+                if(result1 || result2) {
+                    result = result1 > 0 ? result1 : result2;
+                    printf("%s: %d: set arm and wait arm stop failed\n", __FILE__, __LINE__);
+                    return result;
+                }
+            }
+            else{
+                result1 = set_arm_bytes(2, 'R', Goal_Position, RKeyPos[start - 9]);
+                result2 = wait_arm_stop_exten('R', 15);
+                if(result1 || result2) {
+                    result = result1 > 0 ? result1 : result2;
+                    printf("%s: %d: set arm and wait arm stop failed\n", __FILE__, __LINE__);
+                    return result;
+                }
+            }
+            CURKEYNUM = start;
+            firstKey = false;
+            //send_rt_hands(); // 发送hands的实时数据
+
+            // 获取用户是否覆盖start位置
+            // 根据用户覆盖信息选择是否敲击start的琴键
+            sdValue[1] = (UINT8_T)start;
+            bool _statue = get_led_statue(start);
+            printf("%s: %d: get led statue ledNum(%d) statue(%d)\n", __FILE__, __LINE__, start, (int)_statue);
+            pthread_mutex_lock(&mutex);
+            result = hit_and_hit(start, _statue);
+            pthread_mutex_unlock(&mutex);
             if(result) {
                 printf("%s: %d: hit and hit failed\n", __FILE__, __LINE__);
                 return result;
             }
 
-            //发送消息
+            // 给主机PC发送敲击的结果
             if(_statue) {
-                //击中琴键
+                // 用户击中琴键
                 sdValue[2] = 0x01;
                 pthread_mutex_lock(&mutex);  //加锁
                 pProtoV3->sendMessage(0x40, 0x83, 2, sdValue);
                 pthread_mutex_unlock(&mutex);//解锁
             }
             else{
-                //没有击中琴键
+                // 用户没有击中琴键
                 sdValue[2] = 0x00;
                 pthread_mutex_lock(&mutex);  //加锁
                 pProtoV3->sendMessage(0x40, 0x83, 2, sdValue);
                 pthread_mutex_unlock(&mutex);//解锁
             }
+        }
+        else {
+            // 判断end是不是等待符号
+            if(0 == end) {
+        	    delay = (long)(delay2 * tmRate * 80.0 / 0.25);
+                delay_us(delay*1000);
+            }
+            else {
+                //设置琴键高亮
+                pthread_mutex_lock(&mutex);
+                set_led_light(end);
+                pthread_mutex_unlock(&mutex);
 
-            //更新当前的值
-            start = end;
-            delay1 = delay2;
-            CURKEYNUM = end;
+                //移动到目标位置
+                result = from_A_to_B_order1(start, end, 1);
+                if(result) {
+                    printf("%s: %d: from A to B failed\n", __FILE__, __LINE__);
+                    return result;
+                }
+
+                // 发送下一个要敲击的位置
+                sdValue[1] = start;
+                sdValue[2] = end;
+                printf("%s: %d: send pre-key and next-key pos(%x, %x)\n", __FILE__, __LINE__, sdValue[1], sdValue[2]);
+                pthread_mutex_lock(&mutex);
+                pProtoV3->sendMessage(0x40, 0x86, 2, sdValue);
+                pthread_mutex_unlock(&mutex);
+
+                //延时delay1
+                delay = (long)(delay1 * tmRate * 80.0 / 0.25);
+                delay_us(delay*1000);
+
+                // 获取用户是否覆盖的信息
+                // 根据用户是否覆盖的信息决定是否打击琴键
+                sdValue[1] = (UINT8_T)end;
+                bool _statue = get_led_statue(end);
+                printf("%s: %d: get led statue ledNum(%d) statue(%d)\n", __FILE__, __LINE__, end, (int)_statue);
+                pthread_mutex_lock(&mutex);
+                result = hit_and_hit(end, _statue);
+                pthread_mutex_unlock(&mutex);//解锁
+                if(result) {
+                    printf("%s: %d: hit and hit failed\n", __FILE__, __LINE__);
+                    return result;
+                }
+
+                // 给主机PC发送敲击结果
+                if(_statue) {
+                    //击中琴键
+                    sdValue[2] = 0x01;
+                    pthread_mutex_lock(&mutex);  //加锁
+                    pProtoV3->sendMessage(0x40, 0x83, 2, sdValue);
+                    pthread_mutex_unlock(&mutex);//解锁
+                }
+                else{
+                    //没有击中琴键
+                    sdValue[2] = 0x00;
+                    pthread_mutex_lock(&mutex);  //加锁
+                    pProtoV3->sendMessage(0x40, 0x83, 2, sdValue);
+                    pthread_mutex_unlock(&mutex);//解锁
+                }
+
+                // 更新start, 更新delay1
+                start = end;
+                delay1 = delay2;
+                CURKEYNUM = end;
+            }
         }
 
         //判断是否受到曲目终止消息
@@ -642,12 +692,17 @@ int play_music(UINT8_T _songNum)
         _songStop = SONGSTOP;
         pthread_mutex_unlock(&mutex);//解锁
         //如果是曲目终止，则停止并推出演奏
-        if(_songStop) {
+        if(_songStop)
             break;
+
+        if(notEnd) {
+            // 更新end = nextKey; delay2 = nextDelay
+            end = nextKey;
+            delay2 = nextdelay;
         }
     }
 
-    //回到初始位置
+    // 回到初始位置
     result = from_A_to_B_order1(CURKEYNUM, 14, 0);
     if(result) {
         printf("%s: %d: from A to from B faile\n", __FILE__, __LINE__);
@@ -663,15 +718,22 @@ int play_music(UINT8_T _songNum)
     set_enable_relax(0);
     delay_ms(1000.0);
 
-    //发送演奏结束的消息
-    if(!feof(fpR)) {
+    // 设置结束信号
+    pthread_mutex_lock(&mutex);
+    SONGNUM = 0x00;
+    SONGSTOP = false;
+    pthread_mutex_unlock(&mutex);
+    delay_us(500*1000); //等待实时显示hands线程结束
+
+    // 发送演奏结束的消息
+    if(!notEnd) {
         //曲目非正常结束
         sdValue[1] = 0x01;
         pthread_mutex_lock(&mutex);  //加锁
         pProtoV3->sendMessage(0x03, 0x85, 1, sdValue);
         pthread_mutex_unlock(&mutex);//解锁
     }
-    else{
+    else {
         //曲目正常结束
         sdValue[1] = (UINT8_T)_songNum;
         pthread_mutex_lock(&mutex);  //加锁
@@ -681,6 +743,118 @@ int play_music(UINT8_T _songNum)
 
     fclose(fpR);
     return 0;
+}
+
+/********************************
+函数意义：
+    读取琴盘的原始键值，判断手掌的个数
+参数意义：
+    hands[]:存储手掌的位置
+返回值：
+    -1：表示获取失败
+    0：表示没有手掌。没有手掌数据存储在hands[]中
+    1：表示有一只手。手掌的坐标存储在hands[0]
+    2：表示有两只手。手掌的坐标存储在hands[0]和hands[1]
+    >=3：表示有很多手。没有手掌数据存储在hands[]中
+********************************/
+int get_hands_num(int hands[])
+{
+    UINT8_T value1, value2, value3;
+    UINT8_T value, mask;
+    int result, i;
+    bool isHands[18];
+    int s1, s2;
+    int handsNum = 0;
+
+    hands[0] = 0; hands[1]=0;
+
+    // 获取LED地址为ADDR_RTKEYVALUE1的3个值
+    pthread_mutex_lock(&mutex);
+    result = pLed->get_Lamps_bytes(LEDID, ADDR_RTKEYVALUE1, 3);
+    if(result) {
+        printf("%s: %d: get lamps bytes failed\n", __FILE__, __LINE__);
+        return -1;
+    }
+    value1 = pLed->read_Lamps_StatusPacket(0);
+    value2 = pLed->read_Lamps_StatusPacket(1);
+    value3 = pLed->read_Lamps_StatusPacket(2);
+    pthread_mutex_unlock(&mutex);
+    //printf("%s: %d: value1(%x) value2(%x) value3(%x)\n", __FILE__, __LINE__, value1, value2, value3);
+
+    // 把十六进制实时键值转化为数据队列
+    for(i = 0; i < 8; i++) {
+        mask = (UINT8_T)(pow(2, i));
+        isHands[i] = (bool)(value1 & mask);
+    }
+    for(i = 8+0; i < 8 + 8; i++){
+        mask = (UINT8_T)(pow(2, i - 8));
+        isHands[i] = (bool)(value2 & mask);
+    }
+    for(i=16+0; i < 16+2; i++) {
+        mask = (UINT8_T)(pow(2, i - 16));
+        isHands[i] = (bool)(value3 & mask);
+    }
+
+
+    // 识别手的个数和每只手的位置
+    i = 0;
+    while(i < 18) {
+        // 找到用户的hands开始覆盖的位置
+        while((i < 18) && (!isHands[i]))
+            i++;
+        if(i < 18)
+            s1 = i; //记录用户手覆盖的起始位置
+        else
+            break;
+
+        // 找到用户的hands结束覆盖的位置
+        while((i < 18) && isHands[i])
+            i++;
+        if(i < 18)
+            s2 = i+1; //记录用户手覆盖的终止位置
+        else
+            s2 = 18 + 1;
+
+        // 判别用户手势
+        if((s2-s1 <= 4) && (s2-s1 >= 0)) {
+            handsNum += 1;  //记录手势的个数
+            if(handsNum <= 2)
+                hands[handsNum-1] = 19 - (s2+s1)/2;   //记录手势的位置
+        }
+    }
+
+    return handsNum;
+}
+
+/********************************
+函数意义：
+    发送键盘的被覆盖的实时数据
+参数意义：
+    无参数
+返回值：
+    无返回值
+*********************************/
+void send_rt_hands()
+{
+    int hands[2] = {0, 0}, handsNum;
+    UINT8_T sdValue[3];
+
+    //设置sdValue的值
+    sdValue[0] = FIVEARMID;
+
+    // 获取键盘的实时数据
+    handsNum = get_hands_num(hands);
+
+    //发送实时数据
+    sdValue[1] = (UINT8_T)handsNum;
+    sdValue[2] = (UINT8_T)hands[0];
+    sdValue[3] = (UINT8_T)hands[1];
+    if(handsNum != 0) {
+        printf("%s: %d: set rt hands data: handsNum(%d) hands(%d, %d)\n", __FILE__, __LINE__, handsNum, hands[0], hands[1]);
+        pthread_mutex_lock(&mutex);
+        pProtoV3->sendMessage(0x40, 0x87, 3, sdValue);
+        pthread_mutex_unlock(&mutex);
+    }
 }
 
 /******************
@@ -823,6 +997,7 @@ int hit_and_hit(int num, bool _isHit)
             }
             delay_us(5.0 * 1000);
         }
+
         result = pAX12->set_one_servo_bytes(2, 10, Moving_Speed, 759);
         if(result) {
             printf("%s: %d: set one servo word failed\n", __FILE__, __LINE__);
@@ -858,6 +1033,7 @@ int hit_and_hit(int num, bool _isHit)
             }
             delay_us(5.0 * 1000);
         }
+
         result = pAX12->set_one_servo_bytes(2, 5, Moving_Speed, 759);
         if(result) {
             printf("%s: %d: set one servo word\n", __FILE__, __LINE__);
@@ -874,7 +1050,6 @@ int hit_and_hit(int num, bool _isHit)
             }
             delay_us(5.0 * 1000);
         }
-
     }
 
     return 0;
@@ -1062,6 +1237,10 @@ int from_A_to_B_order1(int num1, int num2, int lastChoose)
     double diffK[5];
     int speK[5];
     double delayTm = 0.0;
+
+    printf("%s: %d: start(%d) end(%d) lastChoose(%d)\n", __FILE__, __LINE__, num1, num2, lastChoose);
+    //getchar();
+    //getchar();
 
     // lastChoose的范围
     if(lastChoose != 0 && lastChoose != 1)
@@ -1257,6 +1436,7 @@ int set_arm_bytes(int _byteNum, char dir, int addr, int *value)
 void* conmmunicateThread(void* arg)
 {
     UINT8_T sdValue[2];
+    char song;
 
     sdValue[0] = FIVEARMID;
 
@@ -1324,6 +1504,16 @@ void* conmmunicateThread(void* arg)
                 printf("%s: %d: other message\n", __FILE__, __LINE__);
             }
         }
+
+        // 实时发送用户的hands信息
+        // 判断是否进入演奏模式
+        pthread_mutex_lock(&mutex);
+        song = SONGNUM;
+        pthread_mutex_unlock(&mutex);
+        if(song) {
+            send_rt_hands(); // 发送hands的实时信息
+            delay_us(50*1000);
+        }
     }
 }
 
@@ -1390,7 +1580,9 @@ void* actionProcesThread(void* arg)
         printf("%s: %d: waitting for user inputing...\n", __FILE__, __LINE__);
         while(true) {
             //获取用户输入
+            pthread_mutex_lock(&mutex);
             result = get_user_input(); //获取用户的输入信息
+            pthread_mutex_unlock(&mutex);
             printf("\r%s: %d: result(%d) waiting for inputing...", __FILE__, __LINE__, result);
             fflush(stdout);
 
@@ -1449,13 +1641,6 @@ void* actionProcesThread(void* arg)
             sdValue[1] = (UINT8_T)result;
             pthread_mutex_lock(&mutex);  //加锁
             pProtoV3->sendMessage(0x40, 0x04, 1, sdValue);
-            pthread_mutex_unlock(&mutex);//解锁
-        }
-        else {
-            //演奏终止或者演奏成功
-            pthread_mutex_lock(&mutex);  //加锁
-            SONGNUM = 0x00;
-            SONGSTOP = false;
             pthread_mutex_unlock(&mutex);//解锁
         }
     }
