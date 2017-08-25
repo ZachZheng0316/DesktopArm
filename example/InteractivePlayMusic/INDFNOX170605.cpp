@@ -505,11 +505,11 @@ bool get_led_statue(int _ledNum)
 int play_music(UINT8_T _songNum)
 {
     FILE *fpR = NULL;
-    bool _songStop = false, firstKey = true, notEnd = true;
+    bool _songStop = false, firstKey = true, notEnd = true, normalEnd=true;
     UINT8_T sdValue[4];
     char path[20] = {0, };
     int start, nextKey, end, result1, result2, result;
-    double delay1, nextdelay, delay2, tmRate = 1.5;
+    double delay1, nextdelay, delay2, tmRate = 1.1;
     long delay;
 
     // 机械臂上紧刚度
@@ -656,6 +656,7 @@ int play_music(UINT8_T _songNum)
                 sdValue[1] = (UINT8_T)end;
                 bool _statue = get_led_statue(end);
                 printf("%s: %d: get led statue ledNum(%d) statue(%d)\n", __FILE__, __LINE__, end, (int)_statue);
+                //getchar();
                 pthread_mutex_lock(&mutex);
                 result = hit_and_hit(end, _statue);
                 pthread_mutex_unlock(&mutex);//解锁
@@ -692,8 +693,10 @@ int play_music(UINT8_T _songNum)
         _songStop = SONGSTOP;
         pthread_mutex_unlock(&mutex);//解锁
         //如果是曲目终止，则停止并推出演奏
-        if(_songStop)
+        if(_songStop) {
+            normalEnd = false;
             break;
+        }
 
         if(notEnd) {
             // 更新end = nextKey; delay2 = nextDelay
@@ -726,7 +729,7 @@ int play_music(UINT8_T _songNum)
     delay_us(500*1000); //等待实时显示hands线程结束
 
     // 发送演奏结束的消息
-    if(!notEnd) {
+    if(!normalEnd) {
         //曲目非正常结束
         sdValue[1] = 0x01;
         pthread_mutex_lock(&mutex);  //加锁
