@@ -18,8 +18,8 @@ private:
     float  biasWaitTime;
 
     int GetCFlagBaud(const int baudrate); //获取波特率标志
-    double GetCurrentTime(); //获取当前时间，单位为秒
-    double GetTimeSinceStart();	//计算耗时
+    double GetCurrentTime();              //获取当前时间，单位为秒
+    double GetTimeSinceStart();	          //计算耗时
 
 public:
     PortHandler(int portIndex, int baudrate);
@@ -37,10 +37,10 @@ public:
     int ReadPort(UINT8_T *packet, int length);	//读取串口数据
     int WritePort(UINT8_T *packet, int length);	//发送串口数据
 
-    void SetPacketTimeout(UINT16_T packet_length);	//设置数据包延时时间
-    void SetPacketTimeout(double msec);	//设置数据包延时时间
-    bool IsPacketTimeout();	//检测数据包延时
-    void setBiasWaitTime(float _waitTm); //设置偏置等待时间
+    void SetPacketTimeout(UINT16_T packet_length);//设置数据包延时时间
+    void SetPacketTimeout(double msec);	          //设置数据包延时时间
+    bool IsPacketTimeout();	                      //检测数据包延时
+    void setBiasWaitTime(float _waitTm);          //设置偏置等待时间
 };
 }
 

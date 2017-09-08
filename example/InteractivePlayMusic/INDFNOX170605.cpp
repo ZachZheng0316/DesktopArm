@@ -1643,6 +1643,8 @@ void* actionProcesThread(void* arg)
             //如果演奏失败，发送失败消息
             sdValue[1] = (UINT8_T)result;
             pthread_mutex_lock(&mutex);  //加锁
+            SONGNUM = 0x00;
+            SONGSTOP = false;
             pProtoV3->sendMessage(0x40, 0x04, 1, sdValue);
             pthread_mutex_unlock(&mutex);//解锁
         }
